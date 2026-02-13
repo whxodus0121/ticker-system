@@ -4,7 +4,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// DB 테이블 구조와 매핑될 구조체 (C++의 Class 개념)
+// DB 테이블 구조와 매핑될 구조체
 type Ticket struct {
 	ID    uint `gorm:"primaryKey"`
 	Name  string
@@ -28,4 +28,9 @@ func (r *MySQLRepository) GetStock(name string) (int, error) {
 	var ticket Ticket
 	err := r.DB.Where("name = ?", name).First(&ticket).Error
 	return ticket.Stock, err
+}
+
+func (r *MySQLRepository) SavePurchase(userID string, ticketName string) error {
+	// purchases 테이블에 사용자 ID와 티켓명을 삽입합니다.
+	return r.DB.Exec("INSERT INTO purchases (user_id, ticket_name) VALUES (?, ?)", userID, ticketName).Error
 }

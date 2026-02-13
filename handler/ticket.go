@@ -16,10 +16,21 @@ type TicketHandler struct {
 	Service *service.TicketService
 }
 
+func NewTicketHandler(s *service.TicketService) *TicketHandler {
+	return &TicketHandler{
+		Service: s,
+	}
+}
+
 func (h *TicketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	success, remaining := h.Service.BuyTicket()
+	userID := r.URL.Query().Get("user_id")
+	if userID == "" {
+		userID = "anonymous"
+	}
+
+	success, remaining := h.Service.BuyTicket(userID)
 
 	if success {
 		// 200 OK: 예매 성공

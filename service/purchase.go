@@ -7,43 +7,57 @@ import (
 )
 
 type TicketService struct {
-	RedisRepo *repository.RedisRepository
-	MySQLRepo *repository.MySQLRepository
+	// [변경] 특정 구조체가 아닌 인터페이스 타입을 사용
+	LockRepo   repository.LockRepository
+	TicketRepo repository.TicketRepository
 }
 
-// 리턴 타입을 (bool)에서 (bool, int)로 변경합니다.
-func (s *TicketService) BuyTicket() (bool, int) {
+// [추가] 외부에서 부품(Repo)을 받아 서비스를 조립하는 생성자 함수
+func NewTicketService(lr repository.LockRepository, tr repository.TicketRepository) *TicketService {
+	return &TicketService{
+		LockRepo:   lr,
+		TicketRepo: tr,
+	}
+}
+
+// [수정] 인자에 userID string 추가
+func (s *TicketService) BuyTicket(userID string) (bool, int) {
 	ctx := context.Background()
 	lockKey := "ticket_lock"
 	ticketName := "concert_2026"
 
-	// 1. 재고 먼저 확인 (락 잡기 전에 재고 없으면 바로 컷)
-	stock, _ := s.MySQLRepo.GetStock(ticketName)
+	// 1. 사전 재고 확인
+	stock, _ := s.TicketRepo.GetStock(ticketName)
 	if stock <= 0 {
 		return false, 0
 	}
 
-	// 2. Redis 락 획득 시도 (최대 10번 재시도)
+	// 2. 분산 락 로직 (재시도 포함)
 	for i := 0; i < 10; i++ {
-		ok, _ := s.RedisRepo.Lock(ctx, lockKey, time.Second*2)
+		ok, _ := s.LockRepo.Lock(ctx, lockKey, time.Second*2)
 		if ok {
-			defer s.RedisRepo.Unlock(ctx, lockKey)
+			// 함수가 끝날 때(성공이든 실패든) 락을 해제합니다.
+			defer s.LockRepo.Unlock(ctx, lockKey)
 
-			// 3. 락 획득 후 다시 한번 재고 확인 (그사이 남이 가져갔을 수 있음)
-			currentStock, _ := s.MySQLRepo.GetStock(ticketName)
+			// 락 획득 후 다시 한번 정확한 재고 확인
+			currentStock, _ := s.TicketRepo.GetStock(ticketName)
 			if currentStock > 0 {
-				err := s.MySQLRepo.DecreaseStock(ticketName)
+				// A. 재고 감소 시도
+				err := s.TicketRepo.DecreaseStock(ticketName)
 				if err == nil {
+					// B. [추가] 재고 감소 성공 시 구매 기록 저장
+					// 여기서 에러가 나더라도 이미 재고는 줄었으므로 로직상 성공으로 보거나,
+					// 엄격하게 하려면 여기서 에러 시 재고를 다시 늘리는(Rollback) 처리를 합니다.
+					_ = s.TicketRepo.SavePurchase(userID, ticketName)
+
 					return true, currentStock - 1
 				}
 			}
-			return false, 0 // 재고 없음
+			return false, 0
 		}
-		// 락 실패 시 잠깐 대기
 		time.Sleep(time.Millisecond * 50)
 	}
 
-	// 락 획득 최종 실패 (하지만 재고는 남아있을 수 있음)
-	lastStock, _ := s.MySQLRepo.GetStock(ticketName)
+	lastStock, _ := s.TicketRepo.GetStock(ticketName)
 	return false, lastStock
 }
