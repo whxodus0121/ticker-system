@@ -32,6 +32,12 @@ func (h *TicketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	success, remaining := h.Service.BuyTicket(userID)
 
+	if !success && remaining == -1 {
+		w.WriteHeader(http.StatusBadRequest) // 400 Bad Request
+		json.NewEncoder(w).Encode(map[string]string{"error": "티켓은 1인 1매입니다."})
+		return
+	}
+
 	if success {
 		// 200 OK: 예매 성공
 		json.NewEncoder(w).Encode(Response{

@@ -34,3 +34,13 @@ func (r *MySQLRepository) SavePurchase(userID string, ticketName string) error {
 	// purchases 테이블에 사용자 ID와 티켓명을 삽입합니다.
 	return r.DB.Exec("INSERT INTO purchases (user_id, ticket_name) VALUES (?, ?)", userID, ticketName).Error
 }
+
+func (r *MySQLRepository) ExistsPurchase(userID string, ticketName string) (bool, error) {
+	var count int64
+	// purchases 테이블에서 해당 유저와 티켓이 있는지 COUNT를 세어봅니다.
+	err := r.DB.Table("purchases").
+		Where("user_id = ? AND ticket_name = ?", userID, ticketName).
+		Count(&count).Error
+
+	return count > 0, err
+}
