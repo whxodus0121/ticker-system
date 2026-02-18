@@ -1,6 +1,9 @@
 package repository
 
 import (
+	"fmt"
+	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -9,6 +12,18 @@ type Ticket struct {
 	ID    uint `gorm:"primaryKey"`
 	Name  string
 	Stock int
+}
+
+type Purchase struct {
+	ID         uint      `gorm:"primaryKey;autoIncrement"`
+	UserID     string    `gorm:"column:user_id;not null"`
+	TicketName string    `gorm:"column:ticket_name;not null"`
+	CreatedAt  time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+// Gorm에게 이 구조체가 사용할 테이블 이름을 명시적으로 알려줍니다
+func (Purchase) TableName() string {
+	return "purchases"
 }
 
 type MySQLRepository struct {
@@ -43,4 +58,21 @@ func (r *MySQLRepository) ExistsPurchase(userID string, ticketName string) (bool
 		Count(&count).Error
 
 	return count > 0, err
+}
+
+func (r *MySQLRepository) DeletePurchase(userID string, ticketName string) error {
+	// GORM을 사용하여 조건에 맞는 데이터를 삭제합니다.
+	// Unscoped()를 붙이지 않으면 Soft Delete가 설정된 경우 실제 삭제가 안 될 수 있으므로 확실히 지우기 위해 사용합니다.
+	result := r.DB.Unscoped().Where("user_id = ? AND ticket_name = ?", userID, ticketName).Delete(&Purchase{})
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	// 실제로 삭제된 행이 0개라면 취소할 내역이 없는 것입니다.
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("취소할 내역이 없습니다 (유저: %s)", userID)
+	}
+
+	return nil
 }

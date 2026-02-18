@@ -2,9 +2,8 @@ package service
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"ticket-system/repository"
-	"time"
 )
 
 type TicketService struct {
@@ -23,47 +22,47 @@ func NewTicketService(lr repository.LockRepository, tr repository.TicketReposito
 
 func (s *TicketService) BuyTicket(userID string) (bool, int) {
 	ctx := context.Background()
-	lockKey := "ticket_lock"
 	ticketName := "concert_2026"
 
-	// 1. [v3 추가] 락을 잡기 전 1차 확인 (이미 산 사람은 바로 거절해서 서버 부하 감소)
-	exists, _ := s.TicketRepo.ExistsPurchase(userID, ticketName)
-	if exists {
-		log.Printf("[중복차단] 사용자 %s는 이미 구매했습니다.", userID)
-		return false, -1 // 중복 구매를 나타내는 특수한 값 -1 반환
-	}
+	// 1. Redis에서 차감 (이게 시작점입니다)
+	remaining, err := s.LockRepo.DecreaseStock(ctx, ticketName)
 
-	// 2. 재고 확인
-	stock, _ := s.TicketRepo.GetStock(ticketName)
-	if stock <= 0 {
+	// 중요: Redis 재고가 없으면(0 미만) 바로 리턴
+	if err != nil || remaining < 0 {
 		return false, 0
 	}
 
-	// 3. 분산 락 시도
-	for i := 0; i < 10; i++ {
-		ok, _ := s.LockRepo.Lock(ctx, lockKey, time.Second*2)
-		if ok {
-			defer s.LockRepo.Unlock(ctx, lockKey)
-
-			// 4. [v3 추가] 락을 얻은 후 2차 확인 (동시성 방어)
-			// 아주 짧은 찰나에 두 번 클릭했을 경우, 락 안에서 한 번 더 걸러줍니다.
-			exists, _ := s.TicketRepo.ExistsPurchase(userID, ticketName)
-			if exists {
-				return false, -1
-			}
-
-			currentStock, _ := s.TicketRepo.GetStock(ticketName)
-			if currentStock > 0 {
-				err := s.TicketRepo.DecreaseStock(ticketName)
-				if err == nil {
-					_ = s.TicketRepo.SavePurchase(userID, ticketName)
-					return true, currentStock - 1
-				}
-			}
-			return false, 0
-		}
-		time.Sleep(time.Millisecond * 50)
+	// 2. Redis 통과한 100명만 DB에 저장 (Insert만!)
+	err = s.TicketRepo.SavePurchase(userID, ticketName)
+	if err != nil {
+		// DB 저장 실패 시 로그 확인용
+		fmt.Printf("DB 저장 실패: %v\n", err)
+		return false, remaining
 	}
-	lastStock, _ := s.TicketRepo.GetStock(ticketName)
-	return false, lastStock
+
+	return true, remaining
+}
+
+func (s *TicketService) CancelTicket(userID string) (bool, string) {
+	ctx := context.Background()
+	ticketName := "concert_2026"
+
+	// 1. DB에서 구매 내역이 있는지 확인 (영수증 확인)
+	// (이 작업을 위해 TicketRepo에 DeletePurchase 메서드가 필요합니다)
+	err := s.TicketRepo.DeletePurchase(userID, ticketName)
+	if err != nil {
+		return false, "구매 내역을 찾을 수 없거나 취소에 실패했습니다."
+	}
+
+	// 2. DB 삭제 성공 후, Redis 재고 복구
+	_, err = s.LockRepo.IncreaseStock(ctx, ticketName)
+	if err != nil {
+		// 이 경우 DB는 지워졌는데 Redis 복구가 실패한 상황 (중요 로그 필요)
+		fmt.Printf("[위험] Redis 재고 복구 실패: %v\n", err)
+	}
+
+	// 3. Redis 구매자 명단에서 삭제 (다시 살 수 있게 해줌)
+	_ = s.LockRepo.RemovePurchasedUser(ctx, ticketName, userID)
+
+	return true, "취소가 완료되었습니다."
 }
