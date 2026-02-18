@@ -1,12 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"ticket-system/handler"
 	"ticket-system/repository"
 	"ticket-system/service"
-	"time" // 시간 설정을 위해 추가
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/mysql"
@@ -26,16 +27,13 @@ func main() {
 		log.Fatal("DB 연결 실패: ", err)
 	}
 
-	// [추가] DB 커넥션 풀 설정 (Too many connections 에러 방지)
+	// [추가] DB 커넥션 풀 설정
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatal("커넥션 풀 설정 실패: ", err)
 	}
-	// 동시에 열 수 있는 최대 연결 수 (MySQL max_connections보다 작게 설정)
 	sqlDB.SetMaxOpenConns(100)
-	// 유휴 상태(대기 중)로 유지할 최대 연결 수
 	sqlDB.SetMaxIdleConns(50)
-	// 연결이 유지될 최대 시간
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	// 3. Repository 생성
@@ -48,11 +46,37 @@ func main() {
 	// 5. Handler 조립
 	h := handler.NewTicketHandler(svc)
 
-	// 6. 서버 설정 및 실행
+	// 6. 서버 설정 및 경로 등록
 	mux := http.NewServeMux()
+
+	// [기존] 예매 핸들러 (h는 ServeHTTP가 구현되어 있어야 함)
 	mux.Handle("/ticket", h)
 
-	// [추가] 서버 자체에도 타임아웃을 설정
+	// [추가] 취소 핸들러 등록
+	// 핸들러 패키지에 별도의 CancelHandler를 만들지 않았다면,
+	// 아래와 같이 즉석에서 핸들러 함수를 등록할 수 있습니다.
+	mux.HandleFunc("/cancel", func(w http.ResponseWriter, r *http.Request) {
+		userID := r.URL.Query().Get("user_id")
+		if userID == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error": "user_id가 필요합니다"}`)
+			return
+		}
+
+		// 서비스 레이어의 CancelTicket 호출
+		success, message := svc.CancelTicket(userID)
+
+		if !success {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, `{"error": "%s"}`, message)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"message": "%s"}`, message)
+	})
+
+	// 7. 서버 실행 설정
 	server := &http.Server{
 		Addr:         ":8080",
 		Handler:      mux,
@@ -60,7 +84,7 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
-	log.Println("서버가 :8080 포트에서 시작되었습니다 (커넥션 풀 설정 완료)...")
+	log.Println("서버가 :8080 포트에서 시작되었습니다 (예매: /ticket, 취소: /cancel)...")
 
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatal("서버 시작 실패: ", err)
