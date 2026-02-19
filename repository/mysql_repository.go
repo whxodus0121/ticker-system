@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DB 테이블 구조와 매핑될 구조체
@@ -30,6 +31,12 @@ type MySQLRepository struct {
 	DB *gorm.DB
 }
 
+func NewMySQLRepository(db *gorm.DB) *MySQLRepository {
+	return &MySQLRepository{
+		DB: db,
+	}
+}
+
 // 재고 차감 (UPDATE 쿼리 실행)
 func (r *MySQLRepository) DecreaseStock(name string) error {
 	// stock > 0 일 때만 1을 깎는 안전한 쿼리
@@ -45,9 +52,17 @@ func (r *MySQLRepository) GetStock(name string) (int, error) {
 	return ticket.Stock, err
 }
 
-func (r *MySQLRepository) SavePurchase(userID string, ticketName string) error {
-	// purchases 테이블에 사용자 ID와 티켓명을 삽입합니다.
-	return r.DB.Exec("INSERT INTO purchases (user_id, ticket_name) VALUES (?, ?)", userID, ticketName).Error
+func (r *MySQLRepository) SavePurchase(userID string, ticketName string) (bool, error) {
+	result := r.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&Purchase{
+		UserID:     userID,
+		TicketName: ticketName,
+	})
+
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	return result.RowsAffected > 0, nil
 }
 
 func (r *MySQLRepository) ExistsPurchase(userID string, ticketName string) (bool, error) {

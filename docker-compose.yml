@@ -1,0 +1,38 @@
+services:
+  # 1. MySQL
+  mysql:
+    image: mysql:8.0
+    container_name: ticket-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=password123
+      - MYSQL_DATABASE=ticket_db
+
+  # 2. Redis
+  redis:
+    image: redis:latest
+    container_name: ticket-redis
+    ports:
+      - "6379:6379"
+
+  # 3. Zookeeper
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    container_name: ticket-zookeeper
+    ports:
+      - "22181:2181"
+
+  # 4. Kafka
+  kafka:
+    image: wurstmeister/kafka:latest
+    container_name: ticket-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_ADVERTISED_HOST_NAME=127.0.0.1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CREATE_TOPICS="ticket-topic:1:1"
+      - KAFKA_BROKER_ID=1
+    depends_on:
+      - zookeeper

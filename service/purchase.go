@@ -10,13 +10,15 @@ type TicketService struct {
 	// [변경] 특정 구조체가 아닌 인터페이스 타입을 사용
 	LockRepo   repository.LockRepository
 	TicketRepo repository.TicketRepository
+	KafkaRepo  *repository.KafkaRepository
 }
 
 // [추가] 외부에서 부품(Repo)을 받아 서비스를 조립하는 생성자 함수
-func NewTicketService(lr repository.LockRepository, tr repository.TicketRepository) *TicketService {
+func NewTicketService(lr repository.LockRepository, tr repository.TicketRepository, kr *repository.KafkaRepository) *TicketService {
 	return &TicketService{
 		LockRepo:   lr,
 		TicketRepo: tr,
+		KafkaRepo:  kr,
 	}
 }
 
@@ -24,22 +26,21 @@ func (s *TicketService) BuyTicket(userID string) (bool, int) {
 	ctx := context.Background()
 	ticketName := "concert_2026"
 
-	// 1. Redis에서 차감 (이게 시작점입니다)
+	// 1. Redis에서 차감 (선착순 검증)
 	remaining, err := s.LockRepo.DecreaseStock(ctx, ticketName)
-
-	// 중요: Redis 재고가 없으면(0 미만) 바로 리턴
 	if err != nil || remaining < 0 {
 		return false, 0
 	}
 
-	// 2. Redis 통과한 100명만 DB에 저장 (Insert만!)
-	err = s.TicketRepo.SavePurchase(userID, ticketName)
+	// 2. [변경] MySQL 저장 대신 Kafka에 "예매 성공 이벤트"를 던집니다.
+	// 이제 더 이상 여기서 DB가 느려지는 것을 기다리지 않습니다.
+	err = s.KafkaRepo.PublishPurchase(userID, ticketName)
 	if err != nil {
-		// DB 저장 실패 시 로그 확인용
-		fmt.Printf("DB 저장 실패: %v\n", err)
+		fmt.Printf("Kafka 메시지 전송 실패: %v\n", err)
 		return false, remaining
 	}
 
+	// 3. 사용자에게는 즉시 성공 응답을 보냅니다.
 	return true, remaining
 }
 
