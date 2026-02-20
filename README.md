@@ -38,9 +38,9 @@
 - **해결 방법**: 
   - 비동기 저장 파이프라인: API 서버는 Kafka Producer로서 메시지를 발행하고 즉시 응답하며, 별도의 Consumer 워커가 MySQL 저장을 전담하여 Slow SQL 병목 해결
   - 멱등성(Idempotency) 설계: Kafka의 재전송 정책으로 인한 중복 데이터 유입 시에도 DB 무결성을 유지하도록 UNIQUE KEY 기반의 방어막 구축
-  - DB 최적화 (GORM Clauses): OnConflict(DoNothing) 전략을 사용하여 중복 데이터 발생 시 불필요한 에러 로그 대신 '우아한 스킵(Graceful Skip)' 처리
+  - DB 최적화 (GORM Clauses): OnConflict(DoNothing) 전략을 사용하여 중복 데이터 발생 시 불필요한 에러 로그 처리
   - 인터페이스 고도화: 리포지토리 함수 리턴 타입을 (bool, error)로 개선하여 실제 저장 성공 여부를 워커가 명확히 인지하도록 구현
-- **결과**: 고부하 상황에서도 Redis의 처리 속도와 DB 저장 속도 간의 간극을 Kafka 버퍼로 완벽히 해소하고, 데이터 정합성 100% 달성
+- **결과**: 고부하 상황에서도 Redis의 처리 속도와 DB 저장 속도 간의 간극을 Kafka 버퍼로 해소하고, 데이터 정합성 100% 달성
 
 ---
 ## 🛠 Tech Stack
