@@ -28,3 +28,10 @@ func (r *KafkaRepository) PublishPurchase(userID, ticketName string) error {
 		},
 	)
 }
+
+func (r *KafkaRepository) PublishCancel(userID string, ticketName string) error {
+	return r.Writer.WriteMessages(context.Background(), kafka.Message{
+		Key:   []byte(userID),
+		Value: []byte("CANCEL:" + ticketName), // Value에 CANCEL 접두사를 붙여 구분
+	})
+}

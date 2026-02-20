@@ -24,16 +24,31 @@ func (r *RedisRepository) Unlock(ctx context.Context, key string) error {
 func (r *RedisRepository) DecreaseStock(ctx context.Context, ticketName string) (int, error) {
 	key := "ticket_stock:" + ticketName
 
-	// 원자적 감소 연산
-	val, err := r.Client.Decr(ctx, key).Result()
+	// Lua 스크립트 작성
+	// 1. 현재 재고(GET)를 가져와서 숫자로 변환합니다.
+	// 2. 재고가 존재하고(stock) 0보다 크면(stock > 0) 1을 뺍니다(DECR).
+	// 3. 재고가 없으면 깎지 않고 -1을 반환합니다.
+	script := `
+		local stock = redis.call("GET", KEYS[1])
+		if stock and tonumber(stock) > 0 then
+			return redis.call("DECR", KEYS[1])
+		else
+			return -1
+		end
+	`
+
+	// Eval 명령어로 스크립트 실행
+	val, err := r.Client.Eval(ctx, script, []string{key}).Int()
 	if err != nil {
 		return -1, err
 	}
 
-	// 로그 추가: 터미널에서 숫자가 줄어드는지 확인 가능
-	// fmt.Printf("[Redis 확인] %s 잔여: %d\n", key, val)
+	// 재고 부족 상황 처리
+	if val == -1 {
+		return -1, nil // 서비스 계층에서 "매진"으로 판단할 수 있게 -1 반환
+	}
 
-	return int(val), nil
+	return val, nil
 }
 
 func (r *RedisRepository) AddPurchasedUser(ctx context.Context, ticketName string, userID string) error {
