@@ -56,6 +56,7 @@
 - **Cache & Lock**: Redis
 - **Message Broker**: Apache Kafka & Zookeeper
 - **Container**: Docker, WSL2
+- **Monitoring**: Prometheus, Grafana
 - **Test**: Stress Testing with Goroutines
 
 ## 🚦 실행 방법 (How to Run)
