@@ -110,20 +110,32 @@
    go run main.go
 
 ```mermaid
-sequenceDiagram
-    participant User
-    participant API as Go API Server
-    participant Redis as Redis (Queue/Stock)
-    participant Kafka
-    participant Worker as DB Worker
-    participant MySQL
-
-    User->>API: 예매 요청 (user_id)
-    API->>Redis: 대기열 진입 및 순번 확인
-    Note over API, Redis: Lua Script (Atomic Stock)
-    API-->>User: 202 Accepted (대기 순번 반환)
+graph TD
+    %% 사용자 및 진입점
+    User((User)) -->|1. 예매 요청| API[Go API Server]
     
-    API->>Kafka: 예매 성공 이벤트 발행
-    Kafka->>Worker: 이벤트 컨슘
-    Worker->>MySQL: 구매 내역 저장 (Unique Key 보장)
-    Note right of MySQL: 멱등성 유지
+    %% 대기열 및 재고 관리 (Redis)
+    subgraph Redis_Layer [High Performance Cache & Queue]
+        API -->|2. 순번 할당/조회| WaitingQueue[(Redis: Sorted Set)]
+        API -->|3. 재고 차감| Lua[Lua Script: Atomic Stock]
+        API -->|4. 세션 관리| ActiveSet[(Redis: Active Users)]
+    end
+
+    %% 메시지 브로커 (Kafka)
+    subgraph Message_Broker [Async Pipeline]
+        API -->|5. 성공 이벤트 발행| Kafka{Apache Kafka}
+        Kafka -->|6. 컨슘| Worker[Purchase Worker]
+        Worker -->|Fail/Retry| DLQ[ticket-dlq-topic]
+    end
+
+    %% 영속성 레이어 (MySQL)
+    subgraph Database_Layer [Relational Persistence]
+        Worker -->|7. 최종 저장| MySQL[(MySQL: purchases)]
+    end
+
+    %% 모니터링
+    subgraph Monitoring_Layer [Observability]
+        API -.-> Prometheus(Prometheus)
+        Worker -.-> Prometheus
+        Prometheus -.-> Grafana(Grafana Dashboard)
+    end
