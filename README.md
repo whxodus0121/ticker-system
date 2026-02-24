@@ -3,6 +3,40 @@
 이 프로젝트는 동시성 요청이 발생하는 티켓 예매 상황에서 데이터의 정합성을 보장하고, 
 시스템 부하를 최소화하는 과정을 단계별로 해결해 나가는 백엔드 시스템입니다.
 
+## 전체 아키텍처
+```mermaid
+graph TD
+    %% 사용자 및 진입점
+    User((User)) -->|1. 예매 요청| API[Go API Server]
+    
+    %% 대기열 및 재고 관리 (Redis)
+    subgraph Redis_Layer [High Performance Cache & Queue]
+        API -->|2. 순번 할당/조회| WaitingQueue[(Redis: Sorted Set)]
+        API -->|3. 재고 차감| Lua[Lua Script: Atomic Stock]
+        API -->|4. 세션 관리| ActiveSet[(Redis: Active Users)]
+    end
+
+    %% 메시지 브로커 (Kafka)
+    subgraph Message_Broker [Async Pipeline]
+        API -->|5. 성공 이벤트 발행| Kafka{Apache Kafka}
+        Kafka -->|6. 컨슘| Worker[Purchase Worker]
+        Worker -->|Fail/Retry| DLQ[ticket-dlq-topic]
+    end
+
+    %% 영속성 레이어 (MySQL)
+    subgraph Database_Layer [Relational Persistence]
+        Worker -->|7. 최종 저장| MySQL[(MySQL: purchases)]
+    end
+
+    %% 모니터링
+    subgraph Monitoring_Layer [Observability]
+        API -.-> Prometheus(Prometheus)
+        Worker -.-> Prometheus
+        Prometheus -.-> Grafana(Grafana Dashboard)
+    end
+
+
+
 ## 📌 버전별 개발 기록 (Tags)
 
 ### 🔴 v1.0: 인프라 구축 및 기본 연동
@@ -109,33 +143,3 @@
    ```bash
    go run main.go
 
-```mermaid
-graph TD
-    %% 사용자 및 진입점
-    User((User)) -->|1. 예매 요청| API[Go API Server]
-    
-    %% 대기열 및 재고 관리 (Redis)
-    subgraph Redis_Layer [High Performance Cache & Queue]
-        API -->|2. 순번 할당/조회| WaitingQueue[(Redis: Sorted Set)]
-        API -->|3. 재고 차감| Lua[Lua Script: Atomic Stock]
-        API -->|4. 세션 관리| ActiveSet[(Redis: Active Users)]
-    end
-
-    %% 메시지 브로커 (Kafka)
-    subgraph Message_Broker [Async Pipeline]
-        API -->|5. 성공 이벤트 발행| Kafka{Apache Kafka}
-        Kafka -->|6. 컨슘| Worker[Purchase Worker]
-        Worker -->|Fail/Retry| DLQ[ticket-dlq-topic]
-    end
-
-    %% 영속성 레이어 (MySQL)
-    subgraph Database_Layer [Relational Persistence]
-        Worker -->|7. 최종 저장| MySQL[(MySQL: purchases)]
-    end
-
-    %% 모니터링
-    subgraph Monitoring_Layer [Observability]
-        API -.-> Prometheus(Prometheus)
-        Worker -.-> Prometheus
-        Prometheus -.-> Grafana(Grafana Dashboard)
-    end
