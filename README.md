@@ -106,7 +106,7 @@
    ```bash
    go run main.go
 
-
+```mermaid
 sequenceDiagram
     participant User
     participant API as Go API Server
