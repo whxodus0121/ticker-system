@@ -72,13 +72,12 @@
 
 ---
 ## 🛠 Tech Stack
-- **Language**: Go (Golang)
-- **Database**: MySQL 8.0 (GORM)
-- **Cache & Lock**: Redis
-- **Message Broker**: Apache Kafka & Zookeeper
-- **Container**: Docker, WSL2
-- **Monitoring**: Prometheus, Grafana
-- **Test**: Stress Testing with Goroutines
+- **Language**: `Go (1.21+)` - 고성능 고루틴을 활용한 동시성 처리
+- **Database**: `MySQL 8.0` - GORM을 이용한 구매 데이터 영속화
+- **Cache & Lock**: `Redis` - Lua Script 기반 원자적 재고 관리 및 대기열 구현
+- **Message Broker**: `Apache Kafka` - 비동기 쓰기 작업을 통한 시스템 부하 분산
+- **Monitoring**: `Prometheus` & `Grafana` - 실시간 TPS 및 시스템 지표 시각화
+- **Container**: `Docker` & `Docker Compose` - 일관된 인프라 환경 구축
 
 ## 🚦 실행 방법 (How to Run)
 1. **인프라 컨테이너 실행**
